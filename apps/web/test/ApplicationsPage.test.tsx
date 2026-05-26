@@ -55,6 +55,7 @@ describe('ApplicationsPage', () => {
       listApplications: vi.fn().mockResolvedValue(applications),
       listJobs: vi.fn().mockResolvedValue(jobs),
       listCandidates: vi.fn().mockResolvedValue(candidates),
+      runMatch: vi.fn(),
     };
 
     render(<ApplicationsPage client={client} />);
@@ -83,6 +84,7 @@ describe('ApplicationsPage', () => {
       listApplications: vi.fn().mockResolvedValue(applications),
       listJobs: vi.fn().mockResolvedValue([]),
       listCandidates: vi.fn().mockResolvedValue([]),
+      runMatch: vi.fn(),
     };
 
     render(<ApplicationsPage client={client} />);
@@ -96,6 +98,7 @@ describe('ApplicationsPage', () => {
       listApplications: vi.fn().mockResolvedValue([]),
       listJobs: vi.fn().mockResolvedValue([]),
       listCandidates: vi.fn().mockResolvedValue([]),
+      runMatch: vi.fn(),
     };
 
     render(<ApplicationsPage client={client} />);

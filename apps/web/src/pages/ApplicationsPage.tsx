@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Application, Candidate, Job } from '@talentech/shared';
 import { api, type Api } from '../lib/api.js';
+import { MatchPanel, type RunMatchFn } from '../components/MatchPanel.js';
 
 type ApplicationsPageProps = {
-  client?: Pick<Api, 'listApplications' | 'listJobs' | 'listCandidates'>;
+  client?: Pick<
+    Api,
+    'listApplications' | 'listJobs' | 'listCandidates' | 'runMatch'
+  >;
 };
 
 type LoadedData = {
@@ -24,6 +28,7 @@ export function ApplicationsPage({
   const [data, setData] = useState<LoadedData>(EMPTY_DATA);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +71,19 @@ export function ApplicationsPage({
     );
   }, [data.candidates]);
 
+  const runMatch: RunMatchFn = async (applicationId) => {
+    const updated = await client.runMatch(applicationId);
+    // Reflect the persisted score back into the page's application list so
+    // that collapsing and re-expanding the row keeps the updated values.
+    setData((prev) => ({
+      ...prev,
+      applications: prev.applications.map((a) =>
+        a.id === updated.id ? updated : a,
+      ),
+    }));
+    return updated;
+  };
+
   return (
     <section className="page" aria-labelledby="applications-heading">
       <h2 id="applications-heading">Applications</h2>
@@ -85,13 +103,29 @@ export function ApplicationsPage({
             const candidate = candidatesById.get(application.candidateId);
             const jobTitle = job?.title ?? 'Unknown job';
             const candidateName = candidate?.name ?? 'Unknown candidate';
+            const expanded = expandedId === application.id;
             return (
               <li key={application.id} className="job">
-                <h3 className="job__title">{jobTitle}</h3>
+                <button
+                  type="button"
+                  className="application__toggle"
+                  aria-expanded={expanded}
+                  aria-controls={`match-panel-${application.id}`}
+                  onClick={() =>
+                    setExpandedId(expanded ? null : application.id)
+                  }
+                >
+                  <span className="job__title">{jobTitle}</span>
+                </button>
                 <p className="muted">{candidateName}</p>
                 <p className="job__description">
                   Status: <span className="tag">{application.status}</span>
                 </p>
+                {expanded ? (
+                  <div id={`match-panel-${application.id}`}>
+                    <MatchPanel application={application} runMatch={runMatch} />
+                  </div>
+                ) : null}
               </li>
             );
           })}
