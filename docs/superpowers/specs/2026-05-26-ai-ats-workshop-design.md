@@ -24,7 +24,7 @@ The app must run end-to-end without external infrastructure: no database, no req
 - Node.js 24 (workspace `engines.node` pinned to `>=24 <25`, `.nvmrc` set to `24`), TypeScript (strict)
 - **Backend:** Fastify
 - **Frontend:** Vite + React + TypeScript
-- **Tests:** Vitest (both apps)
+- **Tests:** Vitest (unit + integration in both apps), Playwright (end-to-end smoke)
 - **AI:** LangChain.js (`langchain` + `@langchain/openai`) against Azure OpenAI, deployment serving `gpt-4.1-mini`
 - **Workspace:** pnpm workspaces
 - **Containerization:** Docker + Docker Compose (one command to start the whole app)
@@ -84,11 +84,19 @@ talentech-ai-ats/
 │           │   └── api.ts       # typed fetch client
 │           └── styles.css
 │
-└── packages/
-    └── shared/                  # shared TS types only
-        ├── package.json
-        ├── tsconfig.json
-        └── src/index.ts
+├── packages/
+│   └── shared/                  # shared TS types only
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/index.ts
+└── e2e/                         # Playwright end-to-end tests
+    ├── package.json
+    ├── playwright.config.ts
+    ├── tests/
+    │   ├── jobs.spec.ts
+    │   └── match.spec.ts
+    └── fixtures/
+        └── server.ts            # shared beforeAll setup (resets app state)
 ```
 
 This shape gives `setup-agentic-repository` three meaningful subdomains (`apps/api`, `apps/web`, `packages/shared`) plus a root, which produces a useful `AGENTS.md` + three `CONTEXT.md` files.
@@ -211,30 +219,54 @@ Shows current match score + reasoning (if present). Has a "Run AI match" button 
 
 Base URL: `import.meta.env.VITE_API_URL ?? 'http://localhost:3000'`.
 
-## Tests (Vitest)
+## Tests
 
-### `apps/api/test`
+The test stack has two layers:
+
+- **Vitest** for unit + integration tests inside each app (fast feedback loop, no network)
+- **Playwright** for end-to-end smoke tests that exercise the real frontend against the real API
+
+### Vitest — `apps/api/test`
 
 - `routes/jobs.test.ts` — list/create/get via `fastify.inject`, including 404
 - `routes/applications.test.ts` — create application referencing existing job/candidate; 400 when referenced ids don't exist
 - `ai/matcher.test.ts` — exercises `matchCandidateToJob` with `StubAIClient`, asserts deterministic scoring on overlapping/disjoint skill sets. A second test passes a fake `AIClient` returning a canned JSON string and asserts the `StructuredOutputParser` path produces the expected `MatchResult` (so the LangChain glue is exercised without hitting Azure).
 - `routes/ai.test.ts` — `POST /ai/match` end-to-end with stub client wired in, asserts that the application is updated with score + reasoning
 
-### `apps/web/test`
+### Vitest — `apps/web/test`
 
 - `MatchPanel.test.tsx` — renders with no score, with score; clicking "Run AI match" calls a mocked `runMatch` and re-renders
 - `JobsPage.test.tsx` — renders a list and a created job
 
 `@testing-library/react` + `jsdom` environment.
 
+### Playwright — `e2e/`
+
+A separate workspace package (`@talentech/e2e`) with its own `playwright.config.ts`. Chromium only in the initial scope to keep the install footprint small. Tests run against the real Fastify API + real Vite-built frontend, with `StubAIClient` forced on (no Azure env vars set) so results are deterministic.
+
+- `playwright.config.ts` uses Playwright's `webServer` array to boot both servers before the run:
+  - `pnpm --filter @talentech/api dev` on port 3000
+  - `pnpm --filter @talentech/web dev -- --host 127.0.0.1 --port 5173` on port 5173
+  - `reuseExistingServer: !process.env.CI` so re-running locally is fast
+  - `baseURL: 'http://localhost:5173'`
+- `tests/jobs.spec.ts` — open the Jobs page, fill the "Add job" form, assert the new job appears in the list
+- `tests/match.spec.ts` — navigate to Applications, open a seeded application, click "Run AI match", assert the score (e.g. greater than 0) and reasoning text appear. Deterministic because `StubAIClient` is forced.
+
+Both specs start from a freshly-seeded API: the API process is restarted by the Playwright `webServer` per run, so the seed state is identical every time. No additional reset endpoint is needed for the initial spec.
+
 ### Coverage stance
 
-Not chasing a coverage number. The tests above demonstrate the real test patterns (route injection, component testing with mocked API client, deterministic AI testing via stub) that the workshop's review skills can comment on.
+Not chasing a coverage number. The tests above demonstrate the three test patterns the workshop's review skills can comment on:
+1. Route-level integration via `fastify.inject`
+2. Component testing with a mocked API client
+3. Deterministic E2E against a stubbed AI boundary
 
 ## Scripts (root `package.json`)
 
 - `pnpm dev` — runs api + web in parallel (via `pnpm -r --parallel run dev`)
-- `pnpm test` — runs vitest in every package
+- `pnpm test` — runs Vitest in every package (does not run e2e)
+- `pnpm test:e2e` — runs Playwright; auto-boots api + web via `webServer`
+- `pnpm test:all` — `pnpm test && pnpm test:e2e`
 - `pnpm build` — builds shared, api, web in order
 - `pnpm typecheck` — `tsc --noEmit` across the workspace
 - `pnpm lint` — defer (no linter in initial scope; can be added later, mentioned as a deliberate future addition)
@@ -302,7 +334,7 @@ At repo root: ignores `node_modules/`, `**/dist`, `.git`, `**/.env*`, `**/.vscod
 - No interview scheduling, pipelines, notes, or comments
 - No CI pipeline files (Compose-based dev is in scope; CI is not)
 - No linter / formatter configured initially
-- No E2E tests (Playwright etc.)
+- No Playwright in Docker — E2E is host-run via `pnpm test:e2e` (`playwright install --with-deps` once on first use); a CI-friendly containerized E2E setup can be a follow-up
 
 If the workshop later wants any of these, they're each a separate spec.
 
