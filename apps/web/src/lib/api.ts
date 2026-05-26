@@ -1,4 +1,9 @@
-import type { CreateJobInput, Job } from '@talentech/shared';
+import type {
+  Candidate,
+  CreateCandidateInput,
+  CreateJobInput,
+  Job,
+} from '@talentech/shared';
 
 const baseUrl: string =
   (import.meta.env.VITE_API_URL as string | undefined) ??
@@ -41,6 +46,18 @@ export const api = {
   },
   getJob(id: string): Promise<Job> {
     return request<Job>(`/jobs/${encodeURIComponent(id)}`);
+  },
+  listCandidates(): Promise<Candidate[]> {
+    return request<Candidate[]>('/candidates');
+  },
+  createCandidate(input: CreateCandidateInput): Promise<Candidate> {
+    return request<Candidate>('/candidates', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  getCandidate(id: string): Promise<Candidate> {
+    return request<Candidate>(`/candidates/${encodeURIComponent(id)}`);
   },
 };
 

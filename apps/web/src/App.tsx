@@ -1,9 +1,13 @@
 import { useState } from 'react';
 import { JobsPage } from './pages/JobsPage.js';
+import { CandidatesPage } from './pages/CandidatesPage.js';
 
-type Tab = 'jobs';
+type Tab = 'jobs' | 'candidates';
 
-const TABS: { id: Tab; label: string }[] = [{ id: 'jobs', label: 'Jobs' }];
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'jobs', label: 'Jobs' },
+  { id: 'candidates', label: 'Candidates' },
+];
 
 export function App(): JSX.Element {
   const [activeTab, setActiveTab] = useState<Tab>('jobs');
@@ -30,7 +34,10 @@ export function App(): JSX.Element {
           </button>
         ))}
       </nav>
-      <main>{activeTab === 'jobs' && <JobsPage />}</main>
+      <main>
+        {activeTab === 'jobs' && <JobsPage />}
+        {activeTab === 'candidates' && <CandidatesPage />}
+      </main>
     </div>
   );
 }

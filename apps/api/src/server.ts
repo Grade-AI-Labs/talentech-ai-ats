@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { createRepos, type Repos } from './store/repo.js';
 import { seed } from './store/seed.js';
 import { jobsRoutes } from './routes/jobs.js';
+import { candidatesRoutes } from './routes/candidates.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -33,6 +34,7 @@ export async function buildServer(
   }
 
   await app.register(jobsRoutes);
+  await app.register(candidatesRoutes);
 
   return app;
 }

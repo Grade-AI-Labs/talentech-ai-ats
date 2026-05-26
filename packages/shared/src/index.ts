@@ -38,6 +38,13 @@ export type CreateJobInput = {
   requirements: string[];
 };
 
+export type CreateCandidateInput = {
+  name: string;
+  email: string;
+  summary: string;
+  skills: string[];
+};
+
 export type ApiError = {
   error: string;
 };
