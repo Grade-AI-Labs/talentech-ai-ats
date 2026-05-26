@@ -27,6 +27,7 @@ The app must run end-to-end without external infrastructure: no database, no req
 - **Tests:** Vitest (both apps)
 - **AI:** LangChain.js (`langchain` + `@langchain/openai`) against Azure OpenAI, deployment serving `gpt-4.1-mini`
 - **Workspace:** pnpm workspaces
+- **Containerization:** Docker + Docker Compose (one command to start the whole app)
 
 ## Repository layout
 
@@ -36,6 +37,9 @@ talentech-ai-ats/
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 ├── .gitignore
+├── .nvmrc                       # 24
+├── .env.example                 # Azure OpenAI vars, documented
+├── docker-compose.yml           # api + web services, root .env file
 ├── README.md
 ├── docs/
 │   └── superpowers/specs/       # this design + future specs
@@ -44,6 +48,7 @@ talentech-ai-ats/
 │   │   ├── package.json
 │   │   ├── tsconfig.json
 │   │   ├── vitest.config.ts
+│   │   ├── Dockerfile           # multi-stage: deps → dev / build → runtime
 │   │   ├── src/
 │   │   │   ├── server.ts        # buildServer() factory + start
 │   │   │   ├── routes/
@@ -64,6 +69,7 @@ talentech-ai-ats/
 │       ├── tsconfig.json
 │       ├── vite.config.ts
 │       ├── vitest.config.ts
+│       ├── Dockerfile           # multi-stage: deps → dev (vite serve) / build → nginx static
 │       ├── index.html
 │       └── src/
 │           ├── main.tsx
@@ -227,11 +233,66 @@ Not chasing a coverage number. The tests above demonstrate the real test pattern
 
 ## Scripts (root `package.json`)
 
-- `pnpm dev` — runs api + web in parallel (via `concurrently` or `pnpm -r --parallel run dev`)
+- `pnpm dev` — runs api + web in parallel (via `pnpm -r --parallel run dev`)
 - `pnpm test` — runs vitest in every package
 - `pnpm build` — builds shared, api, web in order
 - `pnpm typecheck` — `tsc --noEmit` across the workspace
 - `pnpm lint` — defer (no linter in initial scope; can be added later, mentioned as a deliberate future addition)
+
+Plus, equivalent one-command flows for people who'd rather not install Node/pnpm locally:
+
+- `docker compose up` — start api + web in dev mode (live reload, source bind-mounted)
+- `docker compose up --build` — rebuild images after dependency changes
+- `docker compose run --rm api pnpm test` — run the API test suite inside the container
+
+## Containerization
+
+Goal: a workshop attendee should be able to clone, copy `.env.example` to `.env`, and run `docker compose up`. Nothing else.
+
+### Per-app Dockerfiles
+
+Each app has a multi-stage `Dockerfile` based on `node:24-alpine`. Three named stages:
+
+1. **`deps`** — copies the workspace manifests (`package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, plus the app's `package.json` and `packages/shared/package.json`) and runs `pnpm install --frozen-lockfile` with `corepack enable`. Heavy layer, cached across rebuilds.
+2. **`dev`** — copies `deps`, sets `CMD ["pnpm", "--filter", "<app>", "dev"]`. Used by Compose. Source is bind-mounted at runtime, so this stage holds the dependency tree only.
+3. **`build`** — copies sources, runs `pnpm --filter <app> build`.
+4. **`runtime`** — minimal final stage. For api: copies `dist/` + production node_modules and runs `node dist/server.js`. For web: copies `dist/` into an `nginx:alpine` stage and serves static files on port 80.
+
+The `dev` stage is what Compose targets in this workshop scope. The `build` / `runtime` stages exist so the Dockerfiles also demonstrate a realistic production path for review skills to read.
+
+### `docker-compose.yml`
+
+Two services:
+
+- **`api`**
+  - `build: { context: ., dockerfile: apps/api/Dockerfile, target: dev }`
+  - `command: pnpm --filter @talentech/api dev`
+  - `volumes`: project root bind-mounted to `/app`, plus an *anonymous* volume on `/app/node_modules` and on every `apps/*/node_modules` and `packages/*/node_modules` path so the container's installed modules aren't shadowed by the host
+  - `env_file: .env`
+  - `ports: 3000:3000`
+- **`web`**
+  - `build: { context: ., dockerfile: apps/web/Dockerfile, target: dev }`
+  - `command: pnpm --filter @talentech/web dev -- --host 0.0.0.0`
+  - same bind-mount + anonymous-volume pattern
+  - `environment: VITE_API_URL=http://localhost:3000`
+  - `ports: 5173:5173`
+  - `depends_on: [api]`
+
+Vite is started with `--host 0.0.0.0` so the dev server is reachable from the host; HMR works over the published port.
+
+### `.env` handling
+
+`.env.example` lists the four Azure variables with explanatory comments. Compose reads `.env` from the repo root via `env_file`. When the file is unset/empty, the `StubAIClient` fallback kicks in, so `docker compose up` works for a fresh clone with zero configuration.
+
+### What this adds for the workshop
+
+- **One-command bootstrap.** Attendees need Docker; they don't need Node 24 installed locally.
+- **Live editing still works.** Source is bind-mounted, so the `setup-agentic-repository` skill writes AGENTS.md / CONTEXT.md to the host filesystem normally, and the review skills can edit code without going through the container.
+- **More surface for review skills.** Dockerfiles, Compose config, and a `.dockerignore` are exactly the kind of files good review skills should glance at.
+
+### `.dockerignore`
+
+At repo root: ignores `node_modules/`, `**/dist`, `.git`, `**/.env*`, `**/.vscode`, `**/coverage`. Keeps the build context small and prevents host `node_modules` from leaking into the build.
 
 ## What this design intentionally does NOT include
 
@@ -239,7 +300,7 @@ Not chasing a coverage number. The tests above demonstrate the real test pattern
 - No database (Postgres/SQLite/etc.) — in-memory only
 - No file/CV uploads or parsing
 - No interview scheduling, pipelines, notes, or comments
-- No Docker, no CI pipeline files
+- No CI pipeline files (Compose-based dev is in scope; CI is not)
 - No linter / formatter configured initially
 - No E2E tests (Playwright etc.)
 
