@@ -38,8 +38,30 @@ pnpm dev
 |--------------------|----------------------------------------------------|
 | `pnpm dev`         | API on `:3000`, Vite dev server on `:5173`         |
 | `pnpm build`       | Build `shared`, `api`, and `web`                   |
-| `pnpm test`        | Vitest across the workspace                        |
+| `pnpm test`        | Vitest across the workspace (excludes `e2e`)       |
+| `pnpm test:e2e`    | Playwright smoke suite against real API + web      |
+| `pnpm test:all`    | `pnpm test` followed by `pnpm test:e2e`            |
 | `pnpm typecheck`   | `tsc --noEmit` across the workspace                |
+
+### Playwright E2E smoke tests
+
+The `e2e/` workspace package boots the real API and web dev server via
+Playwright's `webServer` and drives them with Chromium. The API is launched
+without any `AZURE_OPENAI_*` env vars, so the deterministic `StubAIClient` is
+always used and the match score is reproducible.
+
+On first use (or after a Playwright version bump), install the Chromium
+browser and its system libraries (this is the only step that needs root):
+
+```bash
+pnpm exec playwright install --with-deps
+```
+
+After that, run the suite from the repo root:
+
+```bash
+pnpm test:e2e
+```
 
 ## Layout
 

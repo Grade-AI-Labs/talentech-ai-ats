@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "pnpm -r --parallel run dev",
     "build": "pnpm --filter @talentech/shared build && pnpm --filter @talentech/api build && pnpm --filter @talentech/web build",
-    "test": "pnpm -r run test",
+    "test": "pnpm --filter \"!@talentech/e2e\" -r run test",
+    "test:e2e": "pnpm --filter @talentech/e2e run test",
+    "test:all": "pnpm test && pnpm test:e2e",
     "typecheck": "pnpm -r run typecheck"
   }
 }
