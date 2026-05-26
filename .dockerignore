@@ -1,8 +1,14 @@
-node_modules
+# Keep the build context lean and prevent host artifacts from leaking in.
+.git
+**/.git
 **/node_modules
 **/dist
-.git
+**/coverage
+**/.vscode
+**/.idea
+**/.DS_Store
 **/.env*
 !**/.env.example
-**/.vscode
-**/coverage
+**/*.log
+**/.cache
+**/.turbo
