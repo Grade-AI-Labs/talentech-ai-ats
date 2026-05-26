@@ -73,6 +73,12 @@ export const api = {
   getApplication(id: string): Promise<Application> {
     return request<Application>(`/applications/${encodeURIComponent(id)}`);
   },
+  runMatch(applicationId: string): Promise<Application> {
+    return request<Application>('/ai/match', {
+      method: 'POST',
+      body: JSON.stringify({ applicationId }),
+    });
+  },
 };
 
 export type Api = typeof api;
