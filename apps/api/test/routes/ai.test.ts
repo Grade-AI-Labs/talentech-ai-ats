@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import type { Application } from '@talentech/shared';
 import { buildServer } from '../../src/server.js';
+import type { AIClient } from '../../src/ai/client.js';
 
 describe('POST /ai/match', () => {
   let app: FastifyInstance;
@@ -106,5 +107,89 @@ describe('POST /ai/match', () => {
 
     expect(second.matchScore).toBe(first.matchScore);
     expect(second.matchReasoning).toBe(first.matchReasoning);
+  });
+});
+
+describe('POST /ai/match with a non-stub AI client', () => {
+  let app: FastifyInstance;
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  async function firstApplicationId(): Promise<string> {
+    const list = (
+      await app.inject({ method: 'GET', url: '/applications' })
+    ).json() as Application[];
+    const [first] = list;
+    expect(first).toBeDefined();
+    return first!.id;
+  }
+
+  it('returns 200 with the model-derived score when the fake client returns valid JSON', async () => {
+    class FakeAIClient implements AIClient {
+      async complete(_prompt: string): Promise<string> {
+        return JSON.stringify({
+          score: 81,
+          reasoning: 'Backend-leaning fit with minor cloud gaps.',
+        });
+      }
+    }
+    app = await buildServer({ seed: true, aiClient: new FakeAIClient() });
+
+    const applicationId = await firstApplicationId();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/ai/match',
+      payload: { applicationId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as Application;
+    expect(body.matchScore).toBe(81);
+    expect(body.matchReasoning).toBe('Backend-leaning fit with minor cloud gaps.');
+  });
+
+  it('maps a MatchError (parse failure) to a 502 response', async () => {
+    class GarbledClient implements AIClient {
+      async complete(_prompt: string): Promise<string> {
+        return 'definitely not JSON';
+      }
+    }
+    app = await buildServer({ seed: true, aiClient: new GarbledClient() });
+
+    const applicationId = await firstApplicationId();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/ai/match',
+      payload: { applicationId },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const body = response.json() as { error: string };
+    expect(body.error).toMatch(/AI match failed/i);
+  });
+
+  it('maps a MatchError (client failure) to a 502 response', async () => {
+    class FailingClient implements AIClient {
+      async complete(_prompt: string): Promise<string> {
+        throw new Error('upstream unavailable');
+      }
+    }
+    app = await buildServer({ seed: true, aiClient: new FailingClient() });
+
+    const applicationId = await firstApplicationId();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/ai/match',
+      payload: { applicationId },
+    });
+
+    expect(response.statusCode).toBe(502);
+    const body = response.json() as { error: string };
+    expect(body.error).toMatch(/AI match failed/i);
   });
 });

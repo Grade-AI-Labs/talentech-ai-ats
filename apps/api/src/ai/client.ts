@@ -1,16 +1,22 @@
 import type { Candidate, Job, MatchResult } from '@talentech/shared';
+import { AzureChatOpenAI } from '@langchain/openai';
 
 /**
  * Abstraction over the model invocation used by the matcher.
  *
- * Slice 4 introduces this interface and ships a deterministic
- * `StubAIClient` only. Slice 5 will add an `AzureOpenAIClient` that
- * speaks to Azure OpenAI via LangChain.js — at that point the matcher
- * will use `complete()` to drive a real prompt/parse cycle.
+ * One method, `complete(prompt)`, returns the raw text the model
+ * produced for a fully-rendered prompt. The matcher owns prompt
+ * construction and output parsing — clients are intentionally thin.
  *
- * The stub bypasses `complete()` entirely (the matcher routes around it
- * when it sees a `StubAIClient`) so the workshop runs with zero external
- * configuration.
+ * Two implementations ship in this app:
+ * - `AzureOpenAIClient` — talks to an Azure OpenAI deployment (serving
+ *   `gpt-4.1-mini`) via LangChain.js's `AzureChatOpenAI`.
+ * - `StubAIClient` — deterministic fallback so `docker compose up`
+ *   works without any Azure configuration.
+ *
+ * The stub bypasses `complete()` entirely — the matcher detects the
+ * concrete `StubAIClient` type and computes the score directly from the
+ * structured inputs.
  */
 export interface AIClient {
   complete(prompt: string): Promise<string>;
@@ -75,6 +81,96 @@ export class StubAIClient implements AIClient {
    */
   async complete(_prompt: string): Promise<string> {
     return '{"score":0,"reasoning":"stub"}';
+  }
+}
+
+/**
+ * Configuration for `AzureOpenAIClient`. Mirrors the environment-variable
+ * surface documented in `.env.example`. `endpoint` corresponds to
+ * `AZURE_OPENAI_ENDPOINT` — when set, it takes precedence over
+ * `instanceName` (the legacy `AZURE_OPENAI_API_INSTANCE_NAME` form).
+ */
+export type AzureOpenAIClientConfig = {
+  apiKey: string;
+  deploymentName: string;
+  apiVersion: string;
+  endpoint?: string;
+  instanceName?: string;
+  /** Optional override; defaults to a low value for deterministic match scoring. */
+  temperature?: number;
+};
+
+/**
+ * Azure OpenAI client backed by LangChain.js's `AzureChatOpenAI`.
+ *
+ * The class is intentionally tiny: it owns the `AzureChatOpenAI`
+ * instance and exposes the `AIClient.complete(prompt)` boundary. All
+ * prompt construction and output parsing live in the matcher — this
+ * keeps the LangChain dependency at one place and makes the I/O surface
+ * trivially fakeable in tests.
+ *
+ * Selection is environment-driven: `buildServer()` constructs this
+ * client only when all four `AZURE_OPENAI_*` variables are set;
+ * otherwise it falls back to `StubAIClient`.
+ */
+export class AzureOpenAIClient implements AIClient {
+  private readonly model: AzureChatOpenAI;
+
+  constructor(config: AzureOpenAIClientConfig) {
+    if (!config.endpoint && !config.instanceName) {
+      throw new Error(
+        'AzureOpenAIClient requires either an endpoint or an instance name.',
+      );
+    }
+    this.model = new AzureChatOpenAI({
+      azureOpenAIApiKey: config.apiKey,
+      azureOpenAIApiDeploymentName: config.deploymentName,
+      azureOpenAIApiVersion: config.apiVersion,
+      ...(config.endpoint
+        ? { azureOpenAIBasePath: config.endpoint }
+        : { azureOpenAIApiInstanceName: config.instanceName }),
+      temperature: config.temperature ?? 0,
+    });
+  }
+
+  /**
+   * Send a single prompt to the configured Azure OpenAI deployment and
+   * return the model's text output. The matcher handles prompt
+   * formatting (via `ChatPromptTemplate`) and output parsing (via
+   * `StructuredOutputParser`) — this method is intentionally a passthrough
+   * to the underlying `AzureChatOpenAI.invoke()`.
+   *
+   * Errors from `AzureChatOpenAI` (network, auth) bubble up to the
+   * matcher, which rewraps them as `MatchError`.
+   */
+  async complete(prompt: string): Promise<string> {
+    const message = await this.model.invoke(prompt);
+    const content = message.content;
+    if (typeof content === 'string') {
+      return content;
+    }
+    // `content` can be an array of content parts for multimodal models.
+    // The matcher only ever sends text prompts; concatenate text parts
+    // defensively and ignore non-text blocks.
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (typeof part === 'string') {
+            return part;
+          }
+          if (
+            part &&
+            typeof part === 'object' &&
+            'text' in part &&
+            typeof (part as { text: unknown }).text === 'string'
+          ) {
+            return (part as { text: string }).text;
+          }
+          return '';
+        })
+        .join('');
+    }
+    return String(content);
   }
 }
 
