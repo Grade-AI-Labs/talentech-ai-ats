@@ -56,3 +56,37 @@ packages/
 `.env.example` documents the Azure OpenAI variables. Leave them unset to use
 the deterministic `StubAIClient` — the app works end-to-end without any
 credentials.
+
+## Production builds
+
+The workshop happy path is `docker compose up` against the `dev` stage. The
+Dockerfiles also include realistic `build` and `runtime` stages so the
+production path is visible to review skills and easy to try locally. These
+stages are *not* wired into `docker-compose.yml` — they exist for inspection
+and for one-off production-style runs.
+
+Build the images from the repo root (the build context is the whole workspace
+so the Dockerfiles can see `pnpm-workspace.yaml` and `packages/shared`):
+
+```bash
+# API: node:24-alpine, runs `node dist/start.js` on :3000
+docker build --target runtime -f apps/api/Dockerfile -t talentech-ai-ats-api .
+
+# Web: nginx:alpine serving the built Vite SPA on :80
+docker build --target runtime -f apps/web/Dockerfile -t talentech-ai-ats-web .
+```
+
+Run them:
+
+```bash
+# API on http://localhost:3000 (StubAIClient is the default with no Azure env)
+docker run --rm -p 3000:3000 talentech-ai-ats-api
+
+# Web on http://localhost:8080
+docker run --rm -p 8080:80 talentech-ai-ats-web
+```
+
+To use the Azure OpenAI client instead of the stub, pass the four
+`AZURE_OPENAI_*` variables from `.env.example` to `docker run` (e.g.
+`--env-file .env`). Omitting them keeps the deterministic stub so the runtime
+image works for a fresh clone with zero configuration.
