@@ -25,7 +25,7 @@ The app must run end-to-end without external infrastructure: no database, no req
 - **Backend:** Fastify
 - **Frontend:** Vite + React + TypeScript
 - **Tests:** Vitest (both apps)
-- **AI:** `@anthropic-ai/sdk`, model `claude-haiku-4-5-20251001`
+- **AI:** LangChain.js (`langchain` + `@langchain/openai`) against Azure OpenAI, deployment serving `gpt-4.1-mini`
 - **Workspace:** pnpm workspaces
 
 ## Repository layout
@@ -172,10 +172,10 @@ export async function matchCandidateToJob(
 
 `ai/client.ts` exposes an `AIClient` interface with one method `complete(prompt: string): Promise<string>` and two implementations:
 
-- `AnthropicAIClient` — wraps `@anthropic-ai/sdk`, model `claude-haiku-4-5-20251001`, uses prompt caching on the system prompt (which describes the matcher's role and output format).
+- `AzureOpenAIClient` — wraps LangChain.js's `AzureChatOpenAI` (from `@langchain/openai`), targeting an Azure OpenAI deployment that serves `gpt-4.1-mini`. The matcher builds a `ChatPromptTemplate` with a system message describing the matcher's role and JSON output contract, then a human message containing the job + candidate. Output is parsed with LangChain's `StructuredOutputParser` (zod schema for `{ score, reasoning }`) so the route gets typed data without ad-hoc JSON handling.
 - `StubAIClient` — deterministic fallback. Computes a score from overlap between `candidate.skills` and `job.requirements` (case-insensitive). Reasoning is a templated string explaining matched/missing skills.
 
-`buildServer()` picks the client based on `process.env.ANTHROPIC_API_KEY` presence. This is the key affordance for the workshop: anyone can run the app without a key, and the stub gives sensible results.
+`buildServer()` picks `AzureOpenAIClient` when all of `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` (or `AZURE_OPENAI_API_INSTANCE_NAME`), `AZURE_OPENAI_DEPLOYMENT_NAME`, and `AZURE_OPENAI_API_VERSION` are present; otherwise it uses `StubAIClient`. This is the key affordance for the workshop: anyone can run the app without Azure access, and the stub gives sensible results. `.env.example` documents all four variables with a comment pointing at the `gpt-4.1-mini` deployment.
 
 The matcher returns `{ score, reasoning }`. The route persists this onto the application via `applications.update(id, { matchScore, matchReasoning })`.
 
@@ -183,7 +183,7 @@ The matcher returns `{ score, reasoning }`. The route persists this onto the app
 
 - Missing entities → 404 with `{ error: "Job not found" }` etc.
 - Validation errors → 400 (Fastify default)
-- Anthropic SDK errors are caught in `ai/matcher.ts` and rethrown as a typed `MatchError`; the `/ai/match` route maps these to 502 with a clear message.
+- LangChain / Azure OpenAI errors (network, auth, parsing) are caught in `ai/matcher.ts` and rethrown as a typed `MatchError`; the `/ai/match` route maps these to 502 with a clear message.
 
 ## Frontend (`apps/web`)
 
@@ -211,7 +211,7 @@ Base URL: `import.meta.env.VITE_API_URL ?? 'http://localhost:3000'`.
 
 - `routes/jobs.test.ts` — list/create/get via `fastify.inject`, including 404
 - `routes/applications.test.ts` — create application referencing existing job/candidate; 400 when referenced ids don't exist
-- `ai/matcher.test.ts` — exercises `matchCandidateToJob` with `StubAIClient`, asserts deterministic scoring on overlapping/disjoint skill sets
+- `ai/matcher.test.ts` — exercises `matchCandidateToJob` with `StubAIClient`, asserts deterministic scoring on overlapping/disjoint skill sets. A second test passes a fake `AIClient` returning a canned JSON string and asserts the `StructuredOutputParser` path produces the expected `MatchResult` (so the LangChain glue is exercised without hitting Azure).
 - `routes/ai.test.ts` — `POST /ai/match` end-to-end with stub client wired in, asserts that the application is updated with score + reasoning
 
 ### `apps/web/test`
