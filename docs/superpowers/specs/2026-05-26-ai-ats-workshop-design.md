@@ -21,7 +21,7 @@ The app must run end-to-end without external infrastructure: no database, no req
 
 ## Tech stack
 
-- Node.js (>=20), TypeScript (strict)
+- Node.js 24 (workspace `engines.node` pinned to `>=24 <25`, `.nvmrc` set to `24`), TypeScript (strict)
 - **Backend:** Fastify
 - **Frontend:** Vite + React + TypeScript
 - **Tests:** Vitest (both apps)
