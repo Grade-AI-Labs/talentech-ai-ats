@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { JobsPage } from './pages/JobsPage.js';
 import { CandidatesPage } from './pages/CandidatesPage.js';
+import { ApplicationsPage } from './pages/ApplicationsPage.js';
 
-type Tab = 'jobs' | 'candidates';
+type Tab = 'jobs' | 'candidates' | 'applications';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'jobs', label: 'Jobs' },
   { id: 'candidates', label: 'Candidates' },
+  { id: 'applications', label: 'Applications' },
 ];
 
 export function App(): JSX.Element {
@@ -37,6 +39,7 @@ export function App(): JSX.Element {
       <main>
         {activeTab === 'jobs' && <JobsPage />}
         {activeTab === 'candidates' && <CandidatesPage />}
+        {activeTab === 'applications' && <ApplicationsPage />}
       </main>
     </div>
   );

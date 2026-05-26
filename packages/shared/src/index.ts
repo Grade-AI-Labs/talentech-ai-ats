@@ -45,6 +45,11 @@ export type CreateCandidateInput = {
   skills: string[];
 };
 
+export type CreateApplicationInput = {
+  jobId: string;
+  candidateId: string;
+};
+
 export type ApiError = {
   error: string;
 };

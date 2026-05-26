@@ -4,6 +4,7 @@ import { createRepos, type Repos } from './store/repo.js';
 import { seed } from './store/seed.js';
 import { jobsRoutes } from './routes/jobs.js';
 import { candidatesRoutes } from './routes/candidates.js';
+import { applicationsRoutes } from './routes/applications.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -35,6 +36,7 @@ export async function buildServer(
 
   await app.register(jobsRoutes);
   await app.register(candidatesRoutes);
+  await app.register(applicationsRoutes);
 
   return app;
 }

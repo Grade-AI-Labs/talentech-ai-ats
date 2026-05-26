@@ -1,5 +1,7 @@
 import type {
+  Application,
   Candidate,
+  CreateApplicationInput,
   CreateCandidateInput,
   CreateJobInput,
   Job,
@@ -58,6 +60,18 @@ export const api = {
   },
   getCandidate(id: string): Promise<Candidate> {
     return request<Candidate>(`/candidates/${encodeURIComponent(id)}`);
+  },
+  listApplications(): Promise<Application[]> {
+    return request<Application[]>('/applications');
+  },
+  createApplication(input: CreateApplicationInput): Promise<Application> {
+    return request<Application>('/applications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+  getApplication(id: string): Promise<Application> {
+    return request<Application>(`/applications/${encodeURIComponent(id)}`);
   },
 };
 
